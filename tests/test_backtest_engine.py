@@ -36,7 +36,7 @@ def db_session():
 @pytest.fixture
 def mock_signal_generator():
     """モックシグナル生成器"""
-    with patch('app.services.backtest_engine.SignalGenerator') as mock:
+    with patch('app.services.signal_generator.SignalGeneratorService') as mock:
         instance = mock.return_value
         instance.generate_signals.return_value = pd.DataFrame([
             {
@@ -54,7 +54,11 @@ def mock_signal_generator():
 @pytest.fixture
 def backtest_engine(db_session, mock_signal_generator):
     """バックテストエンジン"""
-    return BacktestEngine(db_session)
+    with patch('app.services.backtest_engine.SignalGeneratorService') as mock_sg:
+        with patch('app.services.backtest_engine.RiskManagerService') as mock_rm:
+            mock_sg.return_value = mock_signal_generator
+            mock_rm.return_value = Mock()
+            return BacktestEngine(db_session)
 
 
 @pytest.fixture
@@ -71,8 +75,7 @@ def sample_config():
         spread_pips=2.0,
         min_signal_confidence=0.7,
         min_risk_reward=1.5,
-        max_positions=3,
-        execution_mode=ExecutionMode.SIMULATION
+        max_positions=3
     )
 
 
@@ -102,9 +105,11 @@ def test_backtest_engine_initialization(backtest_engine):
     """バックテストエンジン初期化テスト"""
     assert backtest_engine.db is not None
     assert backtest_engine.signal_generator is not None
-    assert backtest_engine.position_manager is not None
-    assert backtest_engine.supported_symbols is not None
-    assert backtest_engine.supported_timeframes is not None
+    assert backtest_engine.risk_manager is not None
+    assert backtest_engine.current_balance == 0.0
+    assert backtest_engine.equity_history == []
+    assert backtest_engine.positions == []
+    assert backtest_engine.position_counter == 0
 
 
 def test_backtest_config_validation(sample_config):
@@ -271,7 +276,7 @@ def test_update_positions_stop_loss(backtest_engine, sample_config):
     
     updated_position = backtest_engine._update_position(position, current_price, sample_config)
     
-    assert updated_position.is_closed
+    assert updated_position.exit_time is not None
     assert updated_position.exit_reason == ExitReason.STOP_LOSS
     assert updated_position.exit_price <= position.stop_loss
 
@@ -299,7 +304,7 @@ def test_update_positions_take_profit(backtest_engine, sample_config):
     
     updated_position = backtest_engine._update_position(position, current_price, sample_config)
     
-    assert updated_position.is_closed
+    assert updated_position.exit_time is not None
     assert updated_position.exit_reason == ExitReason.TAKE_PROFIT
     assert updated_position.exit_price >= position.take_profit
 
@@ -317,8 +322,7 @@ def test_calculate_trade_metrics(backtest_engine):
             exit_price=151.0,
             lot_size=10000,
             net_profit=100.0,
-            is_closed=True
-        ),
+                    ),
         BacktestPosition(
             id="test_2",
             symbol="USDJPY",
@@ -329,8 +333,7 @@ def test_calculate_trade_metrics(backtest_engine):
             exit_price=149.5,
             lot_size=10000,
             net_profit=50.0,
-            is_closed=True
-        )
+                    )
     ]
     
     initial_balance = 100000.0
@@ -362,8 +365,7 @@ def test_calculate_trade_metrics_with_losses(backtest_engine):
             exit_price=151.0,
             lot_size=10000,
             net_profit=100.0,
-            is_closed=True
-        ),
+                    ),
         BacktestPosition(
             id="test_2",
             symbol="USDJPY",
@@ -374,8 +376,7 @@ def test_calculate_trade_metrics_with_losses(backtest_engine):
             exit_price=149.0,
             lot_size=10000,
             net_profit=-100.0,
-            is_closed=True
-        )
+                    )
     ]
     
     initial_balance = 100000.0
@@ -402,16 +403,14 @@ def test_generate_equity_curve(backtest_engine):
             position_type=PositionType.BUY,
             exit_time=datetime.now() - timedelta(hours=2),
             net_profit=100.0,
-            is_closed=True
-        ),
+                    ),
         BacktestPosition(
             id="test_2",
             symbol="USDJPY",
             position_type=PositionType.BUY,
             exit_time=datetime.now() - timedelta(hours=1),
             net_profit=-50.0,
-            is_closed=True
-        )
+                    )
     ]
     
     initial_balance = 100000.0
@@ -515,7 +514,7 @@ def test_position_manager_functions(backtest_engine):
     assert position_count == 1
     
     # ポジションクローズ
-    position.is_closed = True
+    position.exit_time = datetime.now()
     position.exit_time = datetime.now()
     position.exit_price = 151.0
     

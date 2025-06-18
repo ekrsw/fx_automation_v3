@@ -795,3 +795,24 @@ class PerformanceAnalyzer:
                 ]
             }
         }
+    
+    def _calculate_volatility(self, returns: pd.Series) -> float:
+        """ボラティリティ計算"""
+        if returns.empty:
+            return 0.0
+        return returns.std() * np.sqrt(252)  # 年率化
+    
+    def _calculate_var(self, returns: pd.Series, confidence_level: float = 0.95) -> float:
+        """Value at Risk計算"""
+        if returns.empty:
+            return 0.0
+        return np.percentile(returns, (1 - confidence_level) * 100)
+    
+    def _calculate_drawdown_series(self, equity_values: pd.Series) -> pd.Series:
+        """ドローダウンシリーズ計算"""
+        if equity_values.empty:
+            return pd.Series()
+        
+        running_max = equity_values.cummax()
+        drawdown = (equity_values - running_max) / running_max
+        return drawdown

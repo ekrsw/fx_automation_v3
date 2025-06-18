@@ -80,21 +80,20 @@ def sample_positions():
     
     for i in range(5):
         position = BacktestPosition(
-            id=f"pos_{i}",
+            id=i,
             symbol="USDJPY",
-            position_type=PositionType.BUY if i % 2 == 0 else PositionType.SELL,
+            position_type="buy" if i % 2 == 0 else "sell",
             entry_time=base_time + timedelta(days=i*10),
-            exit_time=base_time + timedelta(days=i*10, hours=12),
             entry_price=150.0 + i * 0.1,
-            exit_price=150.0 + i * 0.1 + (0.5 if i % 2 == 0 else -0.3),
             lot_size=10000,
             stop_loss=149.0 + i * 0.1,
             take_profit=152.0 + i * 0.1,
+            exit_time=base_time + timedelta(days=i*10, hours=12),
+            exit_price=150.0 + i * 0.1 + (0.5 if i % 2 == 0 else -0.3),
             net_profit=(50.0 if i % 2 == 0 else -30.0),
             profit_loss=(50.0 if i % 2 == 0 else -30.0),
             commission=5.0,
-            is_closed=True,
-            exit_reason=ExitReason.TAKE_PROFIT if i % 2 == 0 else ExitReason.STOP_LOSS
+            exit_reason="take_profit" if i % 2 == 0 else "stop_loss"
         )
         positions.append(position)
     
@@ -125,8 +124,8 @@ def sample_backtest_result(sample_backtest_config, sample_positions):
         largest_win=max((pos.net_profit for pos in sample_positions if pos.net_profit > 0), default=0),
         largest_loss=min((pos.net_profit for pos in sample_positions if pos.net_profit < 0), default=0),
         max_drawdown=0.03,
-        consecutive_wins=2,
-        consecutive_losses=1
+        max_consecutive_wins=2,
+        max_consecutive_losses=1
     )
     
     # エクイティカーブ生成
@@ -137,15 +136,21 @@ def sample_backtest_result(sample_backtest_config, sample_positions):
         balance += pos.net_profit
         equity_data.append({
             'datetime': pos.exit_time,
-            'balance': balance
+            'equity': balance
         })
     
     equity_curve = pd.DataFrame(equity_data)
     
     # 月次リターン生成
     monthly_returns = pd.DataFrame([
-        {'year': 2023, 'month': i+1, 'return': 0.01 + (i % 3) * 0.005, 'trades': 1}
+        {'year': 2023, 'month': i+1, 'monthly_return': 0.01 + (i % 3) * 0.005, 'trades': 1}
         for i in range(12)
+    ])
+    
+    # 日次リターン生成
+    daily_returns = pd.DataFrame([
+        {'date': datetime(2023, 1, 1) + timedelta(days=i), 'daily_return': 0.001 * (1 + i % 3)}
+        for i in range(30)
     ])
     
     return BacktestResult(
@@ -154,10 +159,9 @@ def sample_backtest_result(sample_backtest_config, sample_positions):
         metrics=metrics,
         positions=sample_positions,
         equity_curve=equity_curve,
-        monthly_returns=monthly_returns,
+        daily_returns=daily_returns,
         execution_time=1.2,
-        start_time=datetime.now() - timedelta(seconds=2),
-        end_time=datetime.now()
+        monthly_returns=monthly_returns
     )
 
 

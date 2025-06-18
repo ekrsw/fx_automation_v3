@@ -50,19 +50,18 @@ def profitable_positions():
     
     for i in range(10):
         position = BacktestPosition(
-            id=f"pos_{i}",
-            symbol="USDJPY",
-            position_type=PositionType.BUY if i % 2 == 0 else PositionType.SELL,
+            id=i,
+            symbol="USDJPY", 
+            position_type="buy" if i % 2 == 0 else "sell",
             entry_time=base_time + timedelta(days=i*5),
-            exit_time=base_time + timedelta(days=i*5, hours=12),
             entry_price=150.0 + i * 0.1,
-            exit_price=150.0 + i * 0.1 + (0.5 if i % 3 != 0 else -0.2),  # 70%勝率
             lot_size=10000,
+            exit_time=base_time + timedelta(days=i*5, hours=12),
+            exit_price=150.0 + i * 0.1 + (0.5 if i % 3 != 0 else -0.2),  # 70%勝率
             net_profit=(50.0 if i % 3 != 0 else -20.0),  # 利益50, 損失-20
             profit_loss=(50.0 if i % 3 != 0 else -20.0),
             commission=5.0,
-            is_closed=True,
-            exit_reason=ExitReason.TAKE_PROFIT if i % 3 != 0 else ExitReason.STOP_LOSS
+            exit_reason="take_profit" if i % 3 != 0 else "stop_loss"
         )
         positions.append(position)
     
@@ -79,7 +78,7 @@ def losing_positions():
         position = BacktestPosition(
             id=f"loss_pos_{i}",
             symbol="USDJPY",
-            position_type=PositionType.BUY,
+            position_type="buy",
             entry_time=base_time + timedelta(days=i*10),
             exit_time=base_time + timedelta(days=i*10, hours=8),
             entry_price=150.0,
@@ -88,8 +87,7 @@ def losing_positions():
             net_profit=-100.0,
             profit_loss=-100.0,
             commission=5.0,
-            is_closed=True,
-            exit_reason=ExitReason.STOP_LOSS
+            exit_reason="stop_loss"
         )
         positions.append(position)
     
@@ -120,8 +118,8 @@ def sample_backtest_result(sample_backtest_config, profitable_positions):
         largest_win=max((pos.net_profit for pos in profitable_positions if pos.net_profit > 0), default=0),
         largest_loss=min((pos.net_profit for pos in profitable_positions if pos.net_profit < 0), default=0),
         max_drawdown=0.05,  # 5%のドローダウン
-        consecutive_wins=3,
-        consecutive_losses=1
+        max_consecutive_wins=3,
+        max_consecutive_losses=1
     )
     
     # エクイティカーブ生成
@@ -132,16 +130,22 @@ def sample_backtest_result(sample_backtest_config, profitable_positions):
         balance += pos.net_profit
         equity_data.append({
             'datetime': pos.exit_time,
-            'balance': balance,
-            'drawdown': max(0, (max(eq['balance'] for eq in equity_data[:i+1]) - balance) / max(eq['balance'] for eq in equity_data[:i+1])) if equity_data else 0
+            'equity': balance,
+            'drawdown': max(0, (max(eq['equity'] for eq in equity_data[:i+1]) - balance) / max(eq['equity'] for eq in equity_data[:i+1])) if equity_data else 0
         })
     
     equity_curve = pd.DataFrame(equity_data)
     
     # 月次リターン生成
     monthly_returns = pd.DataFrame([
-        {'year': 2023, 'month': i+1, 'return': 0.02 + (i % 3) * 0.01, 'trades': 1}
+        {'year': 2023, 'month': i+1, 'monthly_return': 0.02 + (i % 3) * 0.01, 'trades': 1}
         for i in range(12)
+    ])
+    
+    # 日次リターン生成
+    daily_returns = pd.DataFrame([
+        {'date': datetime(2023, 1, 1) + timedelta(days=i), 'daily_return': 0.001 * (1 + i % 3)}
+        for i in range(30)
     ])
     
     return BacktestResult(
@@ -150,18 +154,19 @@ def sample_backtest_result(sample_backtest_config, profitable_positions):
         metrics=metrics,
         positions=profitable_positions,
         equity_curve=equity_curve,
-        monthly_returns=monthly_returns,
+        daily_returns=daily_returns,
         execution_time=1.5,
-        start_time=datetime.now() - timedelta(seconds=2),
-        end_time=datetime.now()
+        monthly_returns=monthly_returns
     )
 
 
 def test_performance_analyzer_initialization(performance_analyzer):
     """パフォーマンス分析器初期化テスト"""
     assert performance_analyzer is not None
-    assert hasattr(performance_analyzer, 'risk_free_rate')
-    assert hasattr(performance_analyzer, 'benchmark_return')
+    assert hasattr(performance_analyzer, 'scoring_weights')
+    assert hasattr(performance_analyzer, 'benchmarks')
+    assert 'risk_free_rate' in performance_analyzer.benchmarks
+    assert 'market_return' in performance_analyzer.benchmarks
 
 
 def test_calculate_risk_metrics(performance_analyzer, sample_backtest_result):
@@ -171,8 +176,8 @@ def test_calculate_risk_metrics(performance_analyzer, sample_backtest_result):
     assert isinstance(risk_metrics, RiskMetrics)
     assert risk_metrics.max_drawdown >= 0
     assert risk_metrics.volatility >= 0
-    assert risk_metrics.value_at_risk_95 <= 0  # VaRは負の値
-    assert risk_metrics.value_at_risk_99 <= 0
+    assert risk_metrics.value_at_risk_95 >= 0  # VaRは絶対値として計算される
+    assert risk_metrics.conditional_var_95 >= 0
     assert risk_metrics.downside_deviation >= 0
     assert risk_metrics.beta is not None
 
@@ -424,7 +429,7 @@ def test_edge_cases_single_trade(performance_analyzer, sample_backtest_config):
     single_position = [BacktestPosition(
         id="single",
         symbol="USDJPY",
-        position_type=PositionType.BUY,
+        position_type="buy",
         entry_time=datetime.now() - timedelta(hours=1),
         exit_time=datetime.now(),
         entry_price=150.0,
@@ -486,8 +491,8 @@ def test_performance_rating_classification(performance_analyzer):
         (85, PerformanceRating.EXCELLENT),
         (75, PerformanceRating.GOOD),
         (65, PerformanceRating.GOOD),
-        (55, PerformanceRating.FAIR),
-        (45, PerformanceRating.FAIR),
+        (55, PerformanceRating.AVERAGE),
+        (45, PerformanceRating.AVERAGE),
         (35, PerformanceRating.POOR),
         (15, PerformanceRating.POOR)
     ]

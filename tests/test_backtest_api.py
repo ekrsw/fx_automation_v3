@@ -1,5 +1,6 @@
 import pytest
 import json
+import pandas as pd
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, AsyncMock
 from fastapi.testclient import TestClient
@@ -161,7 +162,7 @@ def test_validate_data_quality_endpoint(client):
         duplicates_count=0,
         invalid_records=2,
         quality_score=92.5,
-        status=DataQualityStatus.GOOD_QUALITY,
+        status=DataQualityStatus.GOOD,
         issues=["小さなギャップが5箇所あります"],
         recommendations=["定期的なデータ更新を推奨"]
     )
@@ -178,7 +179,7 @@ def test_validate_data_quality_endpoint(client):
         assert data["timeframe"] == "H1"
         assert data["total_records"] == 1000
         assert data["quality_score"] == 92.5
-        assert data["status"] == "GOOD_QUALITY"
+        assert data["status"] == "good"
         assert len(data["issues"]) == 1
         assert len(data["recommendations"]) == 1
 
@@ -199,8 +200,8 @@ def test_run_backtest_endpoint(client, sample_backtest_request):
         largest_win=500.0,
         largest_loss=-400.0,
         max_drawdown=0.08,
-        consecutive_wins=8,
-        consecutive_losses=3
+        max_consecutive_wins=8,
+        max_consecutive_losses=3
     )
     
     mock_result = BacktestResult(
@@ -215,7 +216,8 @@ def test_run_backtest_endpoint(client, sample_backtest_request):
         status=BacktestStatus.COMPLETED,
         metrics=mock_metrics,
         positions=[],
-        equity_curve=None,
+        equity_curve=pd.DataFrame(),
+        daily_returns=pd.DataFrame(),
         execution_time=2.5
     )
     
@@ -246,7 +248,8 @@ def test_run_backtest_endpoint_failed(client, sample_backtest_request):
         status=BacktestStatus.FAILED,
         metrics=None,
         positions=[],
-        equity_curve=None,
+        equity_curve=pd.DataFrame(),
+        daily_returns=pd.DataFrame(),
         execution_time=0.1,
         error_message="データが不足しています"
     )
@@ -310,7 +313,8 @@ def test_analyze_performance_endpoint(client, sample_backtest_request):
         status=BacktestStatus.COMPLETED,
         metrics=mock_metrics,
         positions=[],
-        equity_curve=None,
+        equity_curve=pd.DataFrame(),
+        daily_returns=pd.DataFrame(),
         execution_time=1.5
     )
     
@@ -378,7 +382,8 @@ def test_generate_report_endpoint(client, sample_backtest_request, sample_report
         status=BacktestStatus.COMPLETED,
         metrics=mock_metrics,
         positions=[],
-        equity_curve=None,
+        equity_curve=pd.DataFrame(),
+        daily_returns=pd.DataFrame(),
         execution_time=1.8
     )
     
@@ -591,7 +596,8 @@ def test_response_models_structure(client, sample_backtest_request):
         status=BacktestStatus.COMPLETED,
         metrics=mock_metrics,
         positions=[],
-        equity_curve=None,
+        equity_curve=pd.DataFrame(),
+        daily_returns=pd.DataFrame(),
         execution_time=1.0
     )
     

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-FXの自動売買システム。ダウ理論とエリオット波動理論を基盤としたスイングトレード戦略を実装。MT5プラットフォームとPython FastAPIによるアーキテクチャで構築。**Phase 5（バックテストシステム）完了 - 80+テスト成功**。
+FXの自動売買システム。ダウ理論とエリオット波動理論を基盤としたスイングトレード戦略を実装。MT5プラットフォームとPython FastAPIによるアーキテクチャで構築。**Phase 5（バックテストシステム）実装済み - 現在テスト修正中**。
 
 ## アーキテクチャ
 
@@ -114,8 +114,11 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ### テスト実行
 ```bash
-# 全テスト実行（80+テスト成功）
+# 全テスト実行
 python -m pytest tests/ -v
+
+# 静音モード（概要のみ）
+python -m pytest tests/ -q
 
 # Phase 5バックテスト関連テスト
 python -m pytest tests/test_historical_data_service.py -v
@@ -142,11 +145,11 @@ python -m pytest tests/test_mt5_service.py -v
 # 特定テスト関数実行
 python -m pytest tests/test_models.py::test_price_data_model -v
 
-# 静音モード（概要のみ）
-python -m pytest tests/ -q
-
 # カバレッジ付きテスト
 python -m pytest tests/ --cov=app --cov-report=html
+
+# デバッグ情報付きテスト実行
+python -m pytest tests/ -v -s --tb=short
 ```
 
 ## 設計原則
@@ -164,6 +167,7 @@ python -m pytest tests/ --cov=app --cov-report=html
 - **SQLite使用**: 開発・テスト用。本番環境では別DBを検討
 - **スイングトレード特化**: 長期保有前提（数日〜数週間）
 - **UTF-8エンコーディング**: 日本語テキストファイルはUTF-8で保存
+- **テスト環境**: 現在一部テストでインポートエラーが発生、修正作業中
 
 ## 標準ワークフロー (Standard Workflow)
 
@@ -185,7 +189,7 @@ python -m pytest tests/ --cov=app --cov-report=html
 - **分析エンジン**: 完全動作（ダウ理論、エリオット波動、シグナル生成）
 - **データ層**: MT5連携、データベース永続化、履歴管理
 - **API層**: バックテスト・取引制御・分析結果取得エンドポイント
-- **テスト基盤**: 80+テスト成功、包括的カバレージ
+- **テスト基盤**: 包括的テストスイート実装済み（現在修正中）
 
 ### 次の実装対象（Phase 6: UI/API実装）
 - フロントエンド開発（リアルタイム表示）
@@ -357,4 +361,39 @@ fib_levels = strategy._calculate_fibonacci_levels(start, end, WaveLabel.WAVE_2)
 GOOD, HAS_GAPS, HAS_DUPLICATES, INVALID_FORMAT, MISSING_DATA
 # 0-100点品質スコア算出
 # 自動クリーニング・重複除去機能
+```
+
+## 開発時の注意事項
+
+### 現在のテスト状況
+- 主要な構造問題とデータ型不一致を大幅に改善
+- エラー数: 46 → 0 (完全解決を維持)、失敗数: 66 → 57 (-9減少)
+- 183個のテストが成功 (+24テスト増加)
+- 全体的なテスト成功率は約76%まで向上
+- 残りは主にenum値の表記統一とテストデータ調整
+
+### よくある問題と解決方法
+
+#### テスト実行時のエラー
+```bash
+# 特定のテストファイルのみ実行してエラー箇所を特定
+python -m pytest tests/test_specific_file.py -v
+
+# デバッグ情報付きで実行
+python -m pytest tests/test_specific_file.py -v -s --tb=long
+```
+
+#### インポートエラー
+- app/services/内のモジュール間の循環インポートに注意
+- モックパッチのパス指定は実際のインポート構造に合わせる
+- 'from app.services.xxx import yyy' 形式を統一使用
+
+#### データベース関連
+```bash
+# テストデータベースをクリーンアップ
+rm test*.db
+
+# マイグレーションをリセット
+alembic downgrade base
+alembic upgrade head
 ```

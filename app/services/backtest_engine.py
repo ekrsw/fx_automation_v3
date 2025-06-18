@@ -117,6 +117,19 @@ class BacktestConfig:
     enable_compound_interest: bool = True
     enable_swap_calculation: bool = False
     market_hours_only: bool = False
+    
+    def __post_init__(self):
+        """初期化後のバリデーション"""
+        if self.start_date >= self.end_date:
+            raise ValueError("終了日は開始日より後である必要があります")
+        if self.initial_balance <= 0:
+            raise ValueError("初期残高は正の値である必要があります")
+        if not (0 < self.risk_per_trade < 1):
+            raise ValueError("リスク率は0-1の範囲である必要があります")
+        if self.max_positions <= 0:
+            raise ValueError("最大ポジション数は正の値である必要があります")
+        if self.min_signal_confidence < 0 or self.min_signal_confidence > 1:
+            raise ValueError("最小信頼度は0-1の範囲である必要があります")
 
 
 @dataclass
@@ -242,11 +255,11 @@ class BacktestEngine:
             data = pd.DataFrame([
                 {
                     'datetime': record.datetime,
-                    'open': record.open,
-                    'high': record.high,
-                    'low': record.low,
-                    'close': record.close,
-                    'volume': record.volume
+                    'open': float(record.open),
+                    'high': float(record.high),
+                    'low': float(record.low),
+                    'close': float(record.close),
+                    'volume': int(record.volume) if record.volume else 0
                 }
                 for record in price_records
             ])
@@ -777,3 +790,47 @@ class BacktestEngine:
         
         logger.info(f"パラメータ最適化完了: {len(results)}結果")
         return results
+    
+    def _validate_data_sufficiency(self, price_data: pd.DataFrame, config: BacktestConfig) -> bool:
+        """データ充足性検証"""
+        if price_data.empty:
+            return False
+        
+        # 最小データ数チェック
+        min_required_records = 100  # 最低100レコード必要
+        if len(price_data) < min_required_records:
+            return False
+        
+        # 日付範囲チェック
+        data_start = price_data['datetime'].min()
+        data_end = price_data['datetime'].max()
+        
+        if data_start > config.start_date or data_end < config.end_date:
+            return False
+        
+        return True
+    
+    def _get_pip_value(self, symbol: str) -> float:
+        """通貨ペアのPIP値を取得"""
+        if 'JPY' in symbol:
+            return 0.01  # JPY pairs
+        else:
+            return 0.0001  # Major pairs
+    
+    def _calculate_position_size(self, price: float, stop_loss: float, risk_amount: float) -> float:
+        """ポジションサイズ計算"""
+        if stop_loss == 0 or price == stop_loss:
+            return 0.0
+        
+        risk_per_pip = abs(price - stop_loss)
+        if risk_per_pip == 0:
+            return 0.0
+        
+        # 基本ロットサイズ計算
+        position_size = risk_amount / risk_per_pip
+        
+        # 最小・最大制限
+        min_lot = 1000  # 1000通貨単位
+        max_lot = 1000000  # 100万通貨単位
+        
+        return max(min_lot, min(max_lot, position_size))
